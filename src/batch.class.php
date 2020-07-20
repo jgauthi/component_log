@@ -3,7 +3,7 @@
  * @name Batch (avec design pattern observer)
  * @note: Ensemble de class pour la gestion des batchs & log avec gestion des erreurs
  * @author Jgauthi <github.com/jgauthi>, crée le 2octobre2012
- * @version 2.1.3 (PHP5 Version)
+ * @version 2.1.4 (PHP5 Version)
  * @Requirements:
     - PHP 5.5+
 
@@ -24,7 +24,7 @@ class Batch
 
     /**
      * Constructeur
-     * @param string	$name_script	(Optionnel)
+     * @param string|null $name
      */
     public function __construct($name = null)
     {
@@ -91,6 +91,7 @@ class Batch
 
         // Préparer la destruction de l'objet
         register_shutdown_function([$this, '__epilogue']);
+        return $this;
     }
 
     /**
@@ -493,7 +494,7 @@ class batch_observer_logfile extends AbstractBatchObserver
         // Récupérer la liste des fichiers logs correspondant du cron en cours
         $log_liste = @glob("{$this->folder}/{$this->name}_*.log");
         if(empty($log_liste))
-            return false;
+            return;
 
         $nb_delete = $nb_echec = 0;
         foreach($log_liste as $file)
