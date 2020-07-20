@@ -1,5 +1,5 @@
 # Component Log
-Class and method for generated log on several canals.
+Class and method for generated log on several canals, with error management.
 
 * Terminal (cli)
 * On browser (text/plain)
