@@ -1,6 +1,11 @@
 # Component Log
 Class and method for generated log on several canals.
 
+* Terminal (cli)
+* On browser (text/plain)
+* On logfile
+* Return by email if error
+
 ## Prerequisite
 
 * PHP 5.3+
