@@ -2,9 +2,9 @@
 Class and method for generated log on several canals, with error management.
 
 * Terminal (cli)
-* On browser (text/plain)
+* On the browser (text/plain)
 * On logfile
-* Return by email if error
+* Return by email on certain condition (if error, at end script or manually)
 * In the table `batch_logs` on database
 
 ## Prerequisite
@@ -20,7 +20,7 @@ Edit your [composer.json](https://getcomposer.org) (launch `composer update` aft
     { "type": "git", "url": "git@github.com:jgauthi/component_log.git" }
   ],
   "require": {
-    "jgauthi/component_log": "1.*"
+    "jgauthi/component_log": "2.*"
   }
 }
 ```

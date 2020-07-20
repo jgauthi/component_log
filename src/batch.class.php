@@ -1,77 +1,37 @@
 <?php
 /*****************************************************************************************************
- * @name Batch
- * @note: Gestion des batchs & log avec gestion des erreurs
+ * @name Batch (avec design pattern observer)
+ * @note: Ensemble de class pour la gestion des batchs & log avec gestion des erreurs
  * @author Jgauthi <github.com/jgauthi>, crée le 2octobre2012
- * @version 1.8.3
+ * @version 2.1.3 (PHP5 Version)
  * @Requirements:
-    - Dossier de log (variable: PATH_LOG_DIR)
-
-    Todo chantier batch V2:
-     * Gérer plz formats d'outputs à l'écran (actuellement text/plain), à prévoir:
-     ** html+js (couleur ?)
-     * Support html bootstrap ? (bloc couleur)
-
- * Batch puisse demander des informations: http://www.sitepoint.com/php-command-line-1/
+    - PHP 5.5+
 
  ******************************************************************************************************/
 
-// Lancer directement l'envoi d'information au navigateur sans l'init de la class
-if(!headers_sent())
+class Batch
 {
-    @ob_end_flush(); // A tester
-    ob_implicit_flush(true);
-}
+    // Design pattern Observer
+    protected $observers = [];
+    private $name;
 
-class batch
-{
     // Configuration Log
-    protected $mode_execution = 'apache/text';
-    public $logfile;
-    public $dir_logfile;
-    public $log_echo = true;
-    protected $log_error = false;
-    public $nb_error = 0;
+    protected $nb_error = 0;
     protected $progressbar = 0;
 
-    // Configuration mail en cas d'erreur
-    private $callback_mail_function = null;
-    public $mail_admin = null;
-
     // Config batch
-    public $debug = false;
     private $endscript = false;
-    private $callback_echo_function = array();
 
     /**
      * Constructeur
-     * @param string	$logfile	(Optionnel)
-     * @param string	$version	(Optionnel)
+     * @param string	$name_script	(Optionnel)
      */
-    public function __construct($logfile = null, $version = null)
+    public function __construct($name = null)
     {
-        if(PHP_SAPI === 'cli')
-        {
-            global $argv;
-
-            $this->mode_execution = 'php-cli';
-            if( !empty($argv) && (in_array('-v', $argv) || in_array('--verbose', $argv)) )
-                $this->log_echo = true;
-            else 	$this->log_echo = false;
-        }
-        elseif(!headers_sent())
-        {
-            // Charset du script
-            if(defined('CHARSET'))
-                $charset = ((CHARSET == 'utf-8') ? 'UTF-8' : 'ISO-8859-1');
-            else	$charset = 'UTF-8';
-
-            if(isset($_GET['echo']))
-                $this->log_echo = (bool)$_GET['echo'];
-
-            if($this->log_echo)
-                header("Content-Type: text/plain; charset=$charset");
-        }
+        // Current script name
+        $this->name = ((!empty($name)) ? $name : basename($_SERVER['PHP_SELF']));
+        $this->name = preg_replace('#[^a-z0-9._-]#i', '-', $this->name);
+        $this->name = substr($this->name, 0, 40);
 
         set_time_limit(0);
         ini_set('max_execution_time', 0);
@@ -79,11 +39,38 @@ class batch
         ini_set('memory_limit', '516M');
 
         // Récupérer les erreurs détectés par les autres classes
-        set_error_handler(array($this, 'error_handler_notice'), E_USER_NOTICE);
+        ini_set('display_errors', 'On');
+        error_reporting(E_ALL);
+        set_exception_handler([$this, 'exception_handler_error']);
+        set_error_handler([$this, 'error_handler_notice'], E_USER_NOTICE);
+        set_error_handler([$this, 'error_handler_notice'], E_ALL ^ E_STRICT);
+    }
+
+    // Design pattern
+    public function attach(AbstractBatchObserver $observer)
+    {
+        $observer->set_name($this->name);
+        $this->observers[] = $observer;
+
+        return $this;
+    }
+
+    public function detach(AbstractBatchObserver $observer)
+    {
+        if(is_int($key = array_search($observer, $this->observers, true)))
+            unset($this->observers[$key]);
+    }
+
+
+    //-- Gestion des messages --
+    public function start($version = null)
+    {
+        if(empty($this->observers))
+            throw new InvalidArgumentException('No observer declared.');
 
         // Information du log
-        $info = array('posix pid ID: '. getmypid());
-        if(!is_null($version))
+        $info = ['posix pid ID: '. getmypid()];
+        if(!empty($version))
             $info[] = 'script version: '.$version;
 
         if(!empty($_SERVER['SCRIPT_FILENAME']) && @filemtime($_SERVER['SCRIPT_FILENAME']))
@@ -95,29 +82,15 @@ class batch
         if($nb_charp < 1)
             $nb_charp = 1;
 
-
         // Lancer le timer
         if(empty($_SERVER['REQUEST_TIME_FLOAT']))
             $_SERVER['REQUEST_TIME_FLOAT'] = microtime(true);
 
-        if(!empty($logfile))
-        {
-            // Déterminer l'emplacement du dossier LOG (par défaut à la racine)
-            if(defined('PATH_LOG_DIR') && is_writable(PATH_LOG_DIR))
-                $this->dir_logfile = PATH_LOG_DIR;
-            elseif(!empty($_SERVER['DOCUMENT_ROOT']) && is_writable($_SERVER['DOCUMENT_ROOT'].'/log'))
-                $this->dir_logfile = $_SERVER['DOCUMENT_ROOT'].'/log';
-            else return die(user_error('Aucun dossier de log accessible'));
-
-            $this->logfile = str_replace('\\', '/', "{$this->dir_logfile}/{$logfile}_" .date('Ymd'). '.log');
-            $this->logfile_format = $logfile;
-        }
-
-        $this->config_print_function();
+        // $this->config_print_function();
         $this->log('<##DEBUT DE SESSION ('.$info.') '. str_repeat('#', $nb_charp) );
 
         // Préparer la destruction de l'objet
-        register_shutdown_function(array($this,'__epilogue'));
+        register_shutdown_function([$this, '__epilogue']);
     }
 
     /**
@@ -133,85 +106,25 @@ class batch
         if(connection_aborted())
             $this->log('Connexion HTTP interrompu avec l\'utilisateur ayant lancé le script.', 'info');
 
-        if($this->log_error)
-            $this->log('Le comportement du script a peut être été altéré car des erreur(s) se sont produite(s) durant son execution', 'warning');
+        if($this->nb_error > 1)
+            $this->log("Le comportement du script a peut être été altéré car {$this->nb_error} erreurs se sont produites durant son execution", 'warning');
+        elseif($this->nb_error == 1)
+            $this->log('Le comportement du script a peut être été altéré car une erreur s\'est produite durant son execution', 'warning');
 
         // Vérifier que le script s'est terminé convenablement
-        if($this->endscript === false)
-        {
+        if(false === $this->endscript)
             $this->log('Le script a été interrompu lors de son execution !', 'warning');
 
-            // Contacter l'administrateur
-            if($this->mail_admin()) // $rapport_mail
-                $this->log('Un administrateur a été averti par email', 'info');
-            else $this->log('Merci de contacter un administrateur', 'info');
-        }
+        // Lancer les fins de scripts des différents observer
+        foreach($this->observers as $observer)
+            $observer->__epilogue($this);
 
-        $this->log("###FIN DE SESSION (duree {$duree} milliseconds) #############################################################>");
-        if($this->endscript && $this->log_echo)
-            echo $this->endscript; // Tag pour le script executant le batch
-    }
+        // Mémoire occupé
+        $memory = memory_get_usage();
+        $unit = ['o','ko','mo','go','to','po'];
+        $memory = @round($memory / pow(1024, ($i = floor(log($memory, 1024)))),2).' '.$unit[$i];
 
-
-    /**
-     * Créer à la volée, la fonction d'écriture + envoie de log selon la configuration du batch
-     * @return void
-     */
-    private function config_print_function()
-    {
-        $print_msg = $print_error = $print_string = '';
-
-        if(!empty($this->logfile))
-            $print_msg = $print_error = 'error_log(date("Y-m-d H:i:s") ."\t{$msg}\n", 3, "'.$this->logfile.'");'."\n\n";
-
-        // Impression des messages selon l'environnement
-        if($this->log_echo)
-        {
-            // Mode cli
-            if($this->mode_execution == 'php-cli')
-            {
-                // Print msg on differents canal
-                if(!defined('STDOUT') && !defined('STDERR'))
-                {
-                    define('STDOUT', fopen('php://stdout', 'w'));
-                    define('STDERR', fopen('php://stderr', 'w'));
-
-                    register_shutdown_function(function() { fclose(STDOUT); fclose(STDERR); });
-                }
-
-                // Add color theme
-                if(!empty($_SERVER['COLORTERM']))
-                {
-                    $print_msg .= '$msg = batch::log_terminal_color($msg, $type);'."\n";
-                    $print_error .= '$msg = batch::log_terminal_color($msg, $type);'."\n";
-                }
-
-                // Possibilités d'exporter en 2 canneaux de messages (cumulable)
-                // ex: php test_batch.php -v 1>>/dev/null 2>>error.log
-                $print_msg .= 'fwrite(STDOUT, $msg."\n");'."\n";	// -v 1>>msg.log
-                $print_error .= 'fwrite(STDERR, $msg."\n");'."\n";	// -v 2>>error.log
-                $print_string .= 'fwrite(STDOUT, $msg);'."\n";	// -v 1>>msg.log
-            }
-            // Apache, todo: Gérer le HTML?
-            else
-            {
-                $print = 'echo $msg."\n";'."\n";
-
-                // Maintenir Apache réveillé
-                $flush = 'flush();
-				if(ob_get_level() > 0) ob_flush();'."\n\n";
-
-                $print_msg .= $print.$flush;
-                $print_error .= $print.$flush;
-                $print_string = 'echo $msg;'."\n".$flush;
-            }
-        }
-
-
-        // Définir les fonctions de callback
-        $this->callback_echo_function['msg'] = function($msg, $type) use (&$print_msg) { eval($print_msg); };
-        $this->callback_echo_function['error'] = function($msg, $type) use (&$print_error) { eval($print_error); };
-        $this->callback_echo_function['string'] = function($msg) use (&$print_string) { eval($print_string); };
+        $this->log("###FIN DE SESSION (duree {$duree} milliseconds, mémoire utilisé: {$memory}) ################################>");
     }
 
 
@@ -225,7 +138,7 @@ class batch
     public function get_arg($name, $default_value = null)
     {
         // Mode cli
-        if($this->mode_execution == 'php-cli')
+        if(PHP_SAPI === 'cli')
         {
             global $argv;
 
@@ -256,26 +169,14 @@ class batch
         return $value;
     }
 
-
     /**
-     * Retourne un message avec une couleur de fond correspond au status
-     * @param  string $msg
-     * @param  string $type 	null|success|error|warning|info
-     * @return string
+     * Retourne le nombre d'erreur détecté durant l'execution du script
+     * @return int
      */
-    static public function log_terminal_color($msg, $type)
+    public function get_nb_error()
     {
-        switch($type)
-        {
-            case 'success':	$out = '[42m';	break;	// Green background
-            case 'error':	$out = '[41m';	break;	// Red background
-            case 'warning':	$out = '[43m';	break;	// Yellow background
-            case 'info':	$out = '[44m';	break;	// Blue background
-            default:		return $msg;	break;
-        }
-        return chr(27) . $out . $msg . chr(27) . '[0m';
+        return $this->nb_error;
     }
-
 
     /**
      * Affiche / écrit dans un log: un message
@@ -285,10 +186,8 @@ class batch
      */
     public function log($msg, $type = null)
     {
-        if($type == 'warning')
-            $msg = '/!\ Warning: '.$msg;
-
-        call_user_func($this->callback_echo_function['msg'], $msg, $type);
+        foreach($this->observers as $observer)
+            $observer->log($msg, $type);
     }
 
     /**
@@ -299,7 +198,9 @@ class batch
     public function error($msg)
     {
         $this->nb_error++;
-        call_user_func($this->callback_echo_function['error'], '/!\ '.$msg, 'error');
+
+        foreach($this->observers as $observer)
+            $observer->error($msg);
     }
 
 
@@ -310,29 +211,18 @@ class batch
      */
     public function help($file)
     {
-        global $argv;
-
-        if(preg_match('#apache/([^$]+)#i', $this->mode_execution, $row))
-            $display_help = ((isset($_GET['help'])) ? $row : null);
-
-        elseif( !empty($argv) && (in_array('-h', $argv) || in_array('--help', $argv)) )
-            $display_help = 'cli';
-
         // Afficher l'aide si l'argument help est demandé
+        $display_help = $this->get_arg('help');
         if(empty($display_help))
             return;
 
-
-        if(!is_readable($file))
+        elseif(!is_readable($file))
             $this->log("Le fichier d'aide \"{$file}\" n'est pas lisible ou n'existe pas.");
 
-        $help = file_get_contents($file);
-        if($display_help == 'html')
-            $help = nl2br(htmlentities($help));
-
         // Affichage de l'aide et fin du script
-        echo $help."\n";
-        $this->mail_admin = null;
+        header('Content-Type: text/plain; charset=UTF-8');
+        readfile($file);
+
         $this->end_script();
         return die();
     }
@@ -347,7 +237,6 @@ class batch
      */
     public function error_handler_notice($errno, $errstr, $errfile, $errline)
     {
-        $this->log_error = true;
         $this->error("PHP Error: {$errstr} in file '{$errfile}:{$errline}'");
     }
 
@@ -358,75 +247,17 @@ class batch
      */
     public function exception_handler_error($e)
     {
-        $this->log_error = true;
         $this->error("Exception no catch error: {$e->getMessage()} in file '{$e->getFile()}:{$e->getLine()}");
     }
 
     /**
      * A executer à la fin du script, permet de vérifier qu'il n'a pas été interrompu en cours de route
-     * @param  string $mesg_fin        Message à afficher à l'écran à la fin du batch
-     * @param  array  $reload_with_arg (non supporté) Permet de relancer la cron avec arguments GET (html+js seulement)
+     * @param  string $msg_fin        Message à afficher à l'écran à la fin du batch
      * @return void
      */
-    public function end_script($mesg_fin = null, $reload_with_arg = array())
+    public function end_script()
     {
-        $this->endscript = $mesg_fin;
-
-        /* [Mode web HTML+JS] [DESACTIVER] Non exploitable pour le moment
-        // Permet de relancer la cron avec des arguments GET
-        // -> Utile pour gérer des traitements lourds et éviter les timeouts apache / client
-        // -> Prévoir une alternative en mode php-cli
-        if($this->mode_execution == 'apache/html' && !empty($reload_with_arg))
-        {
-            // Génération URL
-            $url = "http://{$_SERVER['HTTP_HOST']}{$_SERVER['SCRIPT_NAME']}?";
-            array_walk($reload_with_arg, create_function
-            (
-                '&$value, $key',
-                '$value = urlencode($key)."=".urlencode($value);'
-            ));
-            $url .= $reload_with_arg = implode('&', $reload_with_arg);
-
-            // Redirection JS
-            $this->endscript = 'Rechargement cron avec argument: '.$reload_with_arg;
-            echo "<script language=\"javascript\">\ndocument.location.href = '$url';\n</script>";
-
-            // Maintenir Apache réveillé
-            flush();
-            if(ob_get_level() > 0) ob_flush();
-        }*/
-    }
-
-    /**
-     * Affichage des erreurs PHP
-     * @param  bool $afficher
-     * @return void
-     */
-    public function debug($afficher)
-    {
-        $this->debug = $afficher;
-
-        if($afficher)
-        {
-            ini_set('display_errors','On');
-            error_reporting(E_ALL); // E_ALL | E_STRICT
-        }
-        else
-        {
-            ini_set('display_errors','Off');
-            error_reporting(0);
-        }
-    }
-
-    /**
-     * Récupération des erreurs PHP dans les logs
-     * @return void
-     */
-    public function log_get_all_error()
-    {
-        $this->debug(true);
-        set_error_handler(array($this, 'error_handler_notice'), E_ALL ^ E_STRICT);
-        set_exception_handler(array($this, 'exception_handler_error'));
+        $this->endscript = true;
     }
 
     /**
@@ -436,7 +267,7 @@ class batch
     public function varExport()
     {
         $args = func_get_args();
-        $debug_var = array();
+        $debug_var = [];
 
         foreach($args as $var)
         {
@@ -455,126 +286,9 @@ class batch
 
             $debug_var[] = $var;
         }
-        $this->log('/!\ Debug var: '.implode("\n", $debug_var), 'info');
+        $this->log('Debug var: '.implode("\n", $debug_var), 'info');
     }
 
-
-
-    /**
-     * Envoie d'un email à un administrateur
-     * @param  string	$txt	Ajout d'un message supplémentaire au mail
-     * @return bool				Succès de l'envoie du mail
-     */
-    public function mail_admin($txt = null)
-    {
-        if(empty($this->mail_admin))
-            return false;
-
-        $subject = 'Rapport> Log '. basename($_SERVER['PHP_SELF']) . ' du '. date('d/m/Y');
-
-        // Contenu du rapport
-        $mesg = array();
-        if(!empty($_SERVER['HTTP_HOST']) && !empty($_SERVER['REQUEST_URI']))
-            $mesg[] = "URL: http://{$_SERVER['HTTP_HOST']}{$_SERVER['REQUEST_URI']}";
-        else	$mesg[] = "SCRIPT: {$_SERVER['PHP_SELF']}";
-
-        $mesg[] = 'DATE: '. date('d/m/Y H\hi');
-        if(!empty($txt))
-            $mesg[] = "MESSAGE: $txt";
-
-        // Ajouter le contenu du log
-        if(!empty($this->logfile) && is_readable($this->logfile))
-        {
-            $mesg[] = null; //imposer retour à la ligne
-            $mesg[] = "LOGFILE: {$this->logfile}";
-            $mesg[] = trim(file_get_contents($this->logfile));
-        }
-        $mesg = implode("\n", $mesg);
-
-
-        // Envoie du mail, utilisation d'une fonction de callback
-        if(!empty($this->callback_mail_function))
-        {
-            // Préparation des arguments
-            $args = array();
-
-            foreach($this->callback_mail_function['args'] as $hook => $value)
-            {
-                if($hook == 'title')
-                    $args[$hook] = trim($value.' '.$subject);
-
-                elseif($hook == 'content')
-                    $args[$hook] = trim($value."\n\n".$mesg);
-
-                elseif(in_array($hook, array('html', 'smtp')))
-                    $args[$hook] = (($value !== 'bool') ? $value : false);
-
-                elseif(in_array($hook, array('to', 'from', 'reply')) && $value == 'mail')
-                    $args[$hook] = $this->mail_admin;
-
-                elseif(in_array($hook, array('to_name', 'from_name', 'reply_name')) && $value == 'name')
-                {
-                    $args[$hook] = 'System';
-                    if(!empty($_SERVER['HTTP_HOST']))
-                        $args[$hook] .= ' '.$_SERVER['HTTP_HOST'];
-                }
-
-                else $args[$hook] = $value;
-            }
-
-            // Convertir en html si nécessaire
-            if(isset($args['html']) && $args['html'])
-                $args['content'] = nl2br($args['content']);
-
-            return (bool) call_user_func_array($this->callback_mail_function['function'], $args);
-        }
-        // Utilisation fonction mail classique
-        else return @mail($this->mail_admin, $subject, $mesg);
-    }
-
-    /**
-     * Définir une fonction d'envoie de mail (conseillé pour les serveurs utilisant du smtp)
-     * @param  string|array	$function	Nom de la fonction, ou array(class, method)
-     * @param  array 		$args		Arguments de la fonction DANS l'ordre de la fonction. Array('hook_name' => 'value|null pour autocomplete'), cf keywords dans la fonction
-     * @return bool
-     */
-    public function mail_set_callback_function($function, $args)
-    {
-        if( empty($function) || (!is_array($function) && !function_exists($function)) )
-            return !user_error("La fonction de callback mail déclaré '$function' n'existe pas.");
-
-        elseif(empty($args))
-            return !user_error("La fonction de callback mail déclaré '$function' n'a pas d'arguments.");
-
-
-        // Les mots clés sont les arguments acceptés pour la fonction
-        // 'keywords'	=> array('hook_name' => 'action')
-        $this->callback_mail_function = array('function' => $function, 'args' => array());
-        $keywords = array
-        (
-            'to'			=>	'mail',
-            'to_name'		=>	'name',
-            'title'			=>	null,
-            'content'		=>	null,
-            'from'			=>	'mail',
-            'from_name'		=>	'name',
-            'reply'			=>	'mail',
-            'reply_name'	=>	'name',
-            'html'			=>	'bool',
-            'smtp'			=>	'bool'
-        );
-
-        // Renseigné les arguments de la fonction dans l'ordre, $args = array($hook1 => 'value', $hook2 => 'value'...)
-        foreach($args as $hook => $value)
-        {
-            // Valeur null = autocompletion, sinon valeur imposé
-            if(isset($keywords[$hook]))
-                $this->callback_mail_function['args'][$hook] = (($value !== null) ? $value : $keywords[$hook]);
-            else	$this->callback_mail_function['args'][$hook] = null;
-        }
-
-        return true;
-    }
 
     /**
      * Affichage d'une barre de progression
@@ -582,7 +296,7 @@ class batch
      */
     public function progressbar()
     {
-        call_user_func($this->callback_echo_function['string'], '*');
+        echo '*';
 
         if($this->progressbar >= 30)
             $this->progressbar_reset();
@@ -596,38 +310,188 @@ class batch
     public function progressbar_reset()
     {
         $this->progressbar = 0;
-        call_user_func($this->callback_echo_function['string'], "\n");
+        echo "\n";
+    }
+}
+
+
+abstract class AbstractBatchObserver
+{
+    protected $name;
+
+    abstract public function log($msg, $type = null);
+
+    /**
+     * Error messages (can be re-write by children)
+     * @param  string $msg
+     * @return void
+     */
+    public function error($msg)
+    {
+        $this->log($msg, 'error');
     }
 
     /**
-     * Check directory before use it on cron
-     * @param  string  $dir
-     * @param  boolean $writable
-     * @return (bool)
+     * Nom du script en cours
+     * @param string $name
      */
-    public function check_directory($dir, $readable = true, $writable = true)
+    public function set_name($name)
     {
-        if(empty($dir))							return !user_error('Empty directory.');
-        elseif(!is_dir($dir))					return !user_error(sprintf('The folder "%s" does not exists.', $dir));
-        elseif(!is_readable($dir) && $readable)	return !user_error(sprintf('The folder "%s" does not have read permissions.', $dir));
-        elseif(!is_writable($dir) && $writable)	return !user_error(sprintf('The folder "%s" does not have write permissions.', $dir));
+        $this->name = $name;
+    }
 
-        return true;
+    /**
+     * (Optionnel) Action executé automatiquement à la fin du script
+     * @return void
+     */
+    public function __epilogue(Batch $batch)
+    {
+        return; // Aucune action par défaut
+    }
+}
+
+
+class batch_observer_cli extends AbstractBatchObserver
+{
+    private $function;
+
+    public function __construct()
+    {
+        // Print msg on differents canal
+        if(!defined('STDOUT') && !defined('STDERR'))
+        {
+            define('STDOUT', fopen('php://stdout', 'w'));
+            define('STDERR', fopen('php://stderr', 'w'));
+
+            register_shutdown_function(function() { fclose(STDOUT); fclose(STDERR); });
+        }
+
+        // Support color theme
+        $this->function = ($this->support_terminal_color() ? 'log_terminal_color' : 'log_no_filter');
+    }
+
+    // https://cweiske.de/tagebuch/php-auto-coloring-output.htm
+    protected function support_terminal_color()
+    {
+        if(DIRECTORY_SEPARATOR === '\\')
+        {
+            return false !== getenv('ANSICON')
+                || 'ON' === getenv('ConEmuANSI')
+                || 'xterm' === getenv('TERM');
+        }
+
+        return function_exists('posix_isatty') && @posix_isatty(STDOUT);
+    }
+
+    /**
+     * Retourne un message avec une couleur de fond correspond au status
+     * @param  string $msg
+     * @param  string $type 	null|success|error|warning|info
+     * @return string
+     */
+    protected function log_terminal_color($msg, $type = null)
+    {
+        switch($type)
+        {
+            case 'success':	$out = '[42m';	break;	// Green background
+            case 'error':	$out = '[41m';	break;	// Red background
+            case 'warning':	$out = '[43m';	break;	// Yellow background
+            case 'info':	$out = '[44m';	break;	// Blue background
+            default:		return $msg;	break;
+        }
+        return chr(27) . $out . $msg . chr(27) . '[0m';
+    }
+
+    protected function log_no_filter($msg, $type = null)
+    {
+        return $msg;
+    }
+
+
+    public function log($msg, $type = null)
+    {
+        fwrite(STDOUT, call_user_func([$this, $this->function], $msg, $type)."\n"); // -v 1>>msg.log
+    }
+
+    public function error($msg)
+    {
+        fwrite(STDERR, call_user_func([$this, $this->function], $msg, 'error')."\n"); // -v 2>>error.log
+    }
+}
+
+class batch_observer_logfile extends AbstractBatchObserver
+{
+    private $folder;
+    protected $logfile;
+    protected $datetime_delete_oldfile;
+
+    public function __construct($folder, $datetime_delete_oldfile = 'first day of -2 month')
+    {
+        if(empty($folder))
+            throw new InvalidArgumentException('Folder empty in class: '. __CLASS__);
+
+        elseif(!is_writable($folder))
+            throw new InvalidArgumentException(sprintf('Folder "%s" not writeable in class: %s', $folder, __CLASS__));
+
+        $this->folder = $folder;
+        $this->datetime_delete_oldfile = $datetime_delete_oldfile;
+    }
+
+    public function set_name($name)
+    {
+        parent::set_name($name);
+        $this->logfile = str_replace('\\', '/', "{$this->folder}/{$this->name}_" .date('Ymd'). '.log');
+    }
+
+    public function get_filename()
+    {
+        return $this->logfile;
+    }
+
+    public static function msg_format($msg, $type)
+    {
+        switch($type)
+        {
+            case 'success': break;
+
+            case 'info':
+                $msg = "[{$type}] {$msg}";
+                break;
+
+            case 'error':
+                $msg = "/!\ {$msg}";
+                break;
+
+            case 'warning':
+                $msg = "/!\ Warning: {$msg}";
+                break;
+        }
+
+        return $msg;
+    }
+
+    public function log($msg, $type = null)
+    {
+        $msg = self::msg_format($msg, $type);
+        error_log(date('Y-m-d H:i:s') ."\t{$msg}\n", 3, $this->logfile);
     }
 
     /**
      * Suppression des logs liés au batch datant de X temps
-     * @param  string	$filtre	Filtre date interprété par strtotime (défaut: first day of -2 month)
-     * @return (void|null)
+     * @param  Batch		$batch
+     * @return void
      */
-    public function delete_old_logfile($filtre = 'first day of -2 month')
+    public function __epilogue(Batch $batch)
     {
-        $time = strtotime($filtre);
-        if(empty($time) || !function_exists('glob') || empty($this->logfile_format))
-            return false;
+        if(!function_exists('glob') || empty($this->datetime_delete_oldfile))
+            return;
+
+        $time = strtotime($this->datetime_delete_oldfile);
+        if(empty($time))
+            return;
 
         // Récupérer la liste des fichiers logs correspondant du cron en cours
-        $log_liste = @glob("{$this->dir_logfile}/{$this->logfile_format}_*.log");
+        $log_liste = @glob("{$this->folder}/{$this->name}_*.log");
         if(empty($log_liste))
             return false;
 
@@ -646,16 +510,198 @@ class batch
         // Rapport de clean
         if($nb_delete > 0 || $nb_echec > 0)
         {
-            $msg = array();
+            $msg = [];
             if($nb_delete > 0)	$msg[] = $nb_delete.' supprimes';
             if($nb_echec > 0)	$msg[] = $nb_echec.' tentatives de suppressions (droit insuffisant)';
 
-            $this->log("Suppression des vieux logs (filtre: $filtre): ". implode(', ', $msg));
-            return true;
+            $batch->log("Suppression des vieux logs (filtre: $filtre): ". implode(', ', $msg));
         }
-        else return null;
+    }
+}
+
+class batch_observer_web_plain extends AbstractBatchObserver
+{
+    public function __construct()
+    {
+        if(!headers_sent())
+        {
+            @ob_end_flush();
+            ob_implicit_flush(true);
+            header('Content-Type: text/plain; charset=UTF-8');
+        }
     }
 
+    public function log($msg, $type = null)
+    {
+        echo batch_observer_logfile::msg_format($msg, $type)."\n";
+        $this->flush_apache();
+    }
+
+    // Maintenir Apache réveillé
+    protected function flush_apache()
+    {
+        flush();
+        if(ob_get_level() > 0) ob_flush();
+    }
+}
+
+class batch_observer_rapport_mail extends AbstractBatchObserver
+{
+    // Configuration mail en cas d'erreur
+    private $callback_mail_function = null;
+    protected $mail_admin = null;
+
+    // Messages
+    protected $logfile;
+    protected $mode;
+
+    // Modes disponibles
+    const MODE_SENDMAIL_ENDSCRIPT = 'sendmail_endscript';
+    const MODE_SENDMAIL_IF_ERROR = 'sendmail_if_error';
+    const MODE_SENDMAIL_MANUAL = 'sendmail_manual';
+
+    /**
+     * Définir une fonction d'envoie de mail (conseillé pour les serveurs utilisant du smtp)
+     * @param  string|array	$function	Nom de la fonction, ou array(class, method)
+     * @param  array 		$args		Arguments de la fonction DANS l'ordre de la fonction. Array('hook_name' => 'value|null pour autocomplete'), cf keywords dans la fonction
+     * @return bool
+     */
+    public function __construct($function, $args, $mail_admin, $mode = self::MODE_SENDMAIL_ENDSCRIPT)
+    {
+        if( empty($function) || (!is_array($function) && !function_exists($function)) )
+            return !user_error("La fonction de callback mail déclaré '{$function}' n'existe pas.");
+
+        elseif(empty($args))
+            return !user_error("La fonction de callback mail déclaré '{$function}' n'a pas d'arguments.");
+
+
+        // Les mots clés sont les arguments acceptés pour la fonction
+        // 'keywords'	=> array('hook_name' => 'action')
+        $this->callback_mail_function = ['function' => $function, 'args' => []];
+        $this->mail_admin = $mail_admin;
+        $keywords = [
+            'to'			=>	'mail',
+            'to_name'		=>	'name',
+            'title'			=>	null,
+            'content'		=>	null,
+            'from'			=>	'mail',
+            'from_name'		=>	'name',
+            'reply'			=>	'mail',
+            'reply_name'	=>	'name',
+            'html'			=>	'bool',
+            'smtp'			=>	'bool',
+        ];
+
+        // Renseigné les arguments de la fonction dans l'ordre, $args = array($hook1 => 'value', $hook2 => 'value'...)
+        foreach($args as $hook => $value)
+        {
+            // Valeur null = autocompletion, sinon valeur imposé
+            if(isset($keywords[$hook]))
+                $this->callback_mail_function['args'][$hook] = (($value !== null) ? $value : $keywords[$hook]);
+            else	$this->callback_mail_function['args'][$hook] = null;
+        }
+
+        $this->logfile = tmpfile();	// Création d'un fichier temporaire pour stocker les logs
+        $this->mode = $mode;		// Sendmail mode: end script / if error / manual
+    }
+
+    public function log($msg, $type = null)
+    {
+        fwrite($this->logfile, batch_observer_logfile::msg_format($msg, $type)."\n");
+    }
+
+    public function sendmail()
+    {
+        if(empty($this->mail_admin))
+            return false;
+
+        $subject = 'Rapport du script > Log '. $this->name . ' du '. date('d/m/Y');
+
+        // Contenu du rapport
+        $msg = [];
+        if(!empty($_SERVER['HTTP_HOST']) && !empty($_SERVER['REQUEST_URI']))
+            $msg[] = "URL: http://{$_SERVER['HTTP_HOST']}{$_SERVER['REQUEST_URI']}";
+        else	$msg[] = "SCRIPT: {$_SERVER['PHP_SELF']}";
+
+        $msg[] = 'DATE: '. date('d/m/Y H\hi');
+
+        // Contenu du log
+        $log_contents = file(stream_get_meta_data($this->logfile)['uri'], FILE_IGNORE_NEW_LINES);
+
+        // Ajouter le contenu du log
+        $msg[] = null; // imposer retour à la ligne
+        $msg = implode("\n", array_merge($msg, $log_contents));
+
+        // Utilisation fonction mail classique
+        if(empty($this->callback_mail_function))
+            return @mail($this->mail_admin, $subject, $msg);
+
+        // Envoie du mail, utilisation d'une fonction de callback
+        $args = []; // Préparation des arguments
+
+        foreach($this->callback_mail_function['args'] as $hook => $value)
+        {
+            if($hook == 'title')
+                $args[$hook] = trim($value.' '.$subject);
+
+            elseif($hook == 'content')
+                $args[$hook] = trim($value."\n\n".$msg);
+
+            elseif(in_array($hook, array('html', 'smtp')))
+                $args[$hook] = (($value !== 'bool') ? $value : false);
+
+            elseif(in_array($hook, array('to', 'from', 'reply')) && $value == 'mail')
+                $args[$hook] = $this->mail_admin;
+
+            elseif(in_array($hook, array('to_name', 'from_name', 'reply_name')) && $value == 'name')
+            {
+                $args[$hook] = 'System';
+                if(!empty($_SERVER['HTTP_HOST']))
+                    $args[$hook] .= ' '.$_SERVER['HTTP_HOST'];
+            }
+
+            else $args[$hook] = $value;
+        }
+        // Convertir en html si nécessaire
+        if(isset($args['html']) && $args['html'])
+            $args['content'] = nl2br($args['content']);
+
+        return call_user_func_array($this->callback_mail_function['function'], $args);
+    }
+
+    /**
+     * Envoie d'un email à un administrateur
+     * @return bool				Succès de l'envoie du mail
+     */
+    public function __epilogue(Batch $batch)
+    {
+        switch($this->mode)
+        {
+            // Forcer l'envoie du mail si des erreurs ont été détectés
+            case static::MODE_SENDMAIL_IF_ERROR:
+                if($batch->get_nb_error() <= 0)
+                    return;
+                break;
+
+            // Envoie du mail à la fin du script
+            case static::MODE_SENDMAIL_ENDSCRIPT:
+                break;
+
+            // Envoie manuel
+            case static::MODE_SENDMAIL_MANUAL:
+            default:
+                return;
+                break;
+        }
+
+        if($this->sendmail())
+        {
+            if($batch->get_nb_error() > 0)
+                $batch->log('Un administrateur a été averti par email', 'info');
+            else $batch->log('Une copie de ces logs a été transmis à l\'administrateur');
+        }
+        else $batch->log('Echec lors de l\'envoie du email', 'warning');
+    }
 }
 
 ?>
