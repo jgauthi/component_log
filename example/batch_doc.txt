@@ -1,0 +1,39 @@
+Cron                            User Commands
+
+NAME
+    php includes/class/batch.class.php - Class batch
+
+SYNOPSIS
+    `php script.php [OPTION]...`  (recommended)
+
+    OR
+
+    http://url/script.php?option...
+
+DESCRIPTION
+    Exporter les produits corporates sous forme de fichiers XML lisibles par M. Office
+
+    Mandatory  arguments  to  long  options are mandatory for short options
+    too.
+
+    -v, --verbose
+        display messages from cron
+
+    -h, --help
+        Display documentation
+
+CRON JOBS
+    It is advisable to add the script to cron jobs.
+
+    `crontab -l` (cron list)
+    `crontab -e` (cron edit)
+
+    0 5 * * 5 php [path_to_batch]/cron_export_produit.php
+    30 23 31 12 * php [path_to_batch]/cron_export_produit.php
+
+    On gandi's server, edit the file /lamp0/etc/cron/anacrontab
+        1@hourly 0 script1 php [path_to_plugin]/script.php
+        1@daily 0 script2 php [path_to_plugin]/script.php --full
+
+    More info on https://wiki.gandi.net/en/simple/anacron
+

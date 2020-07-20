@@ -2,10 +2,14 @@
   "name": "jgauthi/component_log",
   "description": "Class for write log on different canal",
   "type": "library",
-  "keywords": [ "log", "cli", "front http" ],
+  "keywords": [ "log", "cli", "front http", "pdo" ],
   "homepage": "https://github.com/jgauthi/component_log",
+  "repositories": [
+    { "type": "git", "url": "git@github.com:jgauthi/indieteq-php-my-sql-pdo-database-class.git" }
+  ],
   "require": {
-      "php": ">=5.3.0"
+    "php": ">=5.5.0",
+    "jgauthi/indieteq-php-my-sql-pdo-database-class": "1.*"
   },
   "autoload": {
     "classmap": [ "src/" ]

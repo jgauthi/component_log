@@ -3,9 +3,16 @@
  * @name Batch
  * @note: Gestion des batchs & log avec gestion des erreurs
  * @author Jgauthi <github.com/jgauthi>, crée le 2octobre2012
- * @version 1.7.9
+ * @version 1.8.3
  * @Requirements:
     - Dossier de log (variable: PATH_LOG_DIR)
+
+    Todo chantier batch V2:
+     * Gérer plz formats d'outputs à l'écran (actuellement text/plain), à prévoir:
+     ** html+js (couleur ?)
+     * Support html bootstrap ? (bloc couleur)
+
+ * Batch puisse demander des informations: http://www.sitepoint.com/php-command-line-1/
 
  ******************************************************************************************************/
 
@@ -18,13 +25,14 @@ if(!headers_sent())
 
 class batch
 {
-    // Configuration Log & Timer
+    // Configuration Log
     protected $mode_execution = 'apache/text';
     public $logfile;
     public $dir_logfile;
     public $log_echo = true;
     protected $log_error = false;
     public $nb_error = 0;
+    protected $progressbar = 0;
 
     // Configuration mail en cas d'erreur
     private $callback_mail_function = null;
@@ -121,12 +129,12 @@ class batch
         // Mettre fin au timer
         $duree = ceil((microtime(true) - $_SERVER['REQUEST_TIME_FLOAT']) * 1000);
 
-        if($this->log_error)
-            $this->endscript = false;
-
         // Vérifier si le client a abandonné la connexion
         if(connection_aborted())
             $this->log('Connexion HTTP interrompu avec l\'utilisateur ayant lancé le script.', 'info');
+
+        if($this->log_error)
+            $this->log('Le comportement du script a peut être été altéré car des erreur(s) se sont produite(s) durant son execution', 'warning');
 
         // Vérifier que le script s'est terminé convenablement
         if($this->endscript === false)
@@ -140,7 +148,8 @@ class batch
         }
 
         $this->log("###FIN DE SESSION (duree {$duree} milliseconds) #############################################################>");
-        if($this->endscript && $this->log_echo) echo $this->endscript; // Tag pour le script executant le batch
+        if($this->endscript && $this->log_echo)
+            echo $this->endscript; // Tag pour le script executant le batch
     }
 
 
@@ -150,7 +159,7 @@ class batch
      */
     private function config_print_function()
     {
-        $print_msg = $print_error = '';
+        $print_msg = $print_error = $print_string = '';
 
         if(!empty($this->logfile))
             $print_msg = $print_error = 'error_log(date("Y-m-d H:i:s") ."\t{$msg}\n", 3, "'.$this->logfile.'");'."\n\n";
@@ -181,6 +190,7 @@ class batch
                 // ex: php test_batch.php -v 1>>/dev/null 2>>error.log
                 $print_msg .= 'fwrite(STDOUT, $msg."\n");'."\n";	// -v 1>>msg.log
                 $print_error .= 'fwrite(STDERR, $msg."\n");'."\n";	// -v 2>>error.log
+                $print_string .= 'fwrite(STDOUT, $msg);'."\n";	// -v 1>>msg.log
             }
             // Apache, todo: Gérer le HTML?
             else
@@ -188,22 +198,64 @@ class batch
                 $print = 'echo $msg."\n";'."\n";
 
                 // Maintenir Apache réveillé
-                $print .= 'flush();
+                $flush = 'flush();
 				if(ob_get_level() > 0) ob_flush();'."\n\n";
 
-                $print_msg .= $print;
-                $print_error .= $print;
+                $print_msg .= $print.$flush;
+                $print_error .= $print.$flush;
+                $print_string = 'echo $msg;'."\n".$flush;
             }
         }
 
 
         // Définir les fonctions de callback
-        // $this->callback_echo_function['msg'] = create_function('$msg, $type', $print_msg);
-        // $this->callback_echo_function['error'] = create_function('$msg, $type', $print_error);
         $this->callback_echo_function['msg'] = function($msg, $type) use (&$print_msg) { eval($print_msg); };
         $this->callback_echo_function['error'] = function($msg, $type) use (&$print_error) { eval($print_error); };
-        // alternative à examiner: utilisation de hook comme wordpress
+        $this->callback_echo_function['string'] = function($msg) use (&$print_string) { eval($print_string); };
     }
+
+
+    /**
+     * Récupération des arguments du script
+     * Compatible REQUEST pour le mode web, cli args "--name" ou "--name=value" pour php-cli
+     * @param  string 		$name
+     * @param  string|array $default_value
+     * @return string|array
+     */
+    public function get_arg($name, $default_value = null)
+    {
+        // Mode cli
+        if($this->mode_execution == 'php-cli')
+        {
+            global $argv;
+
+            $expreg = "#^--{$name}(=([^$]+))?$#i";
+            $search = preg_grep($expreg, $argv);
+
+            if(!empty($search))
+            {
+                $result = reset($search);
+                if(preg_match($expreg, $result, $row))
+                    $value = ((!empty($row[2])) ? $row[2] : true);
+            }
+
+            if(!isset($value))
+                return $default_value;
+        }
+        // Mode web
+        else
+        {
+            if(!isset($_REQUEST[$name]))
+                return $default_value;
+
+            $value = $_REQUEST[$name];
+            if($value == '')
+                $value = true;
+        }
+
+        return $value;
+    }
+
 
     /**
      * Retourne un message avec une couleur de fond correspond au status
@@ -300,6 +352,17 @@ class batch
     }
 
     /**
+     * Ajouter les exceptions non cath dans les logs du batch
+     * @param  object $message
+     * @return void
+     */
+    public function exception_handler_error($e)
+    {
+        $this->log_error = true;
+        $this->error("Exception no catch error: {$e->getMessage()} in file '{$e->getFile()}:{$e->getLine()}");
+    }
+
+    /**
      * A executer à la fin du script, permet de vérifier qu'il n'a pas été interrompu en cours de route
      * @param  string $mesg_fin        Message à afficher à l'écran à la fin du batch
      * @param  array  $reload_with_arg (non supporté) Permet de relancer la cron avec arguments GET (html+js seulement)
@@ -308,6 +371,30 @@ class batch
     public function end_script($mesg_fin = null, $reload_with_arg = array())
     {
         $this->endscript = $mesg_fin;
+
+        /* [Mode web HTML+JS] [DESACTIVER] Non exploitable pour le moment
+        // Permet de relancer la cron avec des arguments GET
+        // -> Utile pour gérer des traitements lourds et éviter les timeouts apache / client
+        // -> Prévoir une alternative en mode php-cli
+        if($this->mode_execution == 'apache/html' && !empty($reload_with_arg))
+        {
+            // Génération URL
+            $url = "http://{$_SERVER['HTTP_HOST']}{$_SERVER['SCRIPT_NAME']}?";
+            array_walk($reload_with_arg, create_function
+            (
+                '&$value, $key',
+                '$value = urlencode($key)."=".urlencode($value);'
+            ));
+            $url .= $reload_with_arg = implode('&', $reload_with_arg);
+
+            // Redirection JS
+            $this->endscript = 'Rechargement cron avec argument: '.$reload_with_arg;
+            echo "<script language=\"javascript\">\ndocument.location.href = '$url';\n</script>";
+
+            // Maintenir Apache réveillé
+            flush();
+            if(ob_get_level() > 0) ob_flush();
+        }*/
     }
 
     /**
@@ -339,6 +426,7 @@ class batch
     {
         $this->debug(true);
         set_error_handler(array($this, 'error_handler_notice'), E_ALL ^ E_STRICT);
+        set_exception_handler(array($this, 'exception_handler_error'));
     }
 
     /**
@@ -488,6 +576,28 @@ class batch
         return true;
     }
 
+    /**
+     * Affichage d'une barre de progression
+     * @return void
+     */
+    public function progressbar()
+    {
+        call_user_func($this->callback_echo_function['string'], '*');
+
+        if($this->progressbar >= 30)
+            $this->progressbar_reset();
+        else $this->progressbar++;
+    }
+
+    /**
+     * Ré-initialise le compteur de la barre de progression
+     * @return void
+     */
+    public function progressbar_reset()
+    {
+        $this->progressbar = 0;
+        call_user_func($this->callback_echo_function['string'], "\n");
+    }
 
     /**
      * Check directory before use it on cron

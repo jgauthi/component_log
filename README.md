@@ -5,10 +5,12 @@ Class and method for generated log on several canals, with error management.
 * On browser (text/plain)
 * On logfile
 * Return by email if error
+* In the table `batch_logs` on database
 
 ## Prerequisite
 
-* PHP 5.3+
+* PHP 5.5+
+* Pdo Mysql (use the lib [indieQ Pdo Mysql](https://github.com/jgauthi/indieteq-php-my-sql-pdo-database-class))
 
 ## Install
 Edit your [composer.json](https://getcomposer.org) (launch `composer update` after edit):
