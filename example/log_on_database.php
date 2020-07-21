@@ -2,7 +2,7 @@
 use Jgauthi\Component\Log\Batch;
 use Jgauthi\Component\Log\Observer\BatchPdo;
 
-define('SCRIPT_VERSION', 1.1);
+define('SCRIPT_VERSION', 1.2);
 
 // In this example, the vendor folder is located in "example/"
 require_once __DIR__.'/vendor/autoload.php';
@@ -22,16 +22,24 @@ $pdo = new PDO('mysql:dbname='.DB_DATABASE.';host='. DB_SERVER .';port='.DB_PORT
 
 
 // Init & configuration batch
-// [Before use] Install the table: src/batch_db.class.php:18
 $batch = new Batch('batch_v2_database');
 $batchPdo = new BatchPdo($pdo);
-$batch->attach($batchPdo);
-$batch->start(SCRIPT_VERSION);
+
+try {
+    $batchPdo->install(); // Install the table `batch_logs`
+} catch (Exception $exception) {
+    die($exception->getMessage());
+}
+
+$batch
+    ->attach($batchPdo)
+    ->start(SCRIPT_VERSION)
+    ->log('Lancement de la class observateur BatchPdo')
+;
 
 // Variable pour définir le "produit" ou "dossier" en cours, pour l'observer PDO
 $batch->code_ref = 'MYCODE01';
 
-$batch->log('Lancement de la class du batch_observer_pdo_db');
 echo $var_dont_exists;
 
 $batch->log('Traitement en cours... (3s)');

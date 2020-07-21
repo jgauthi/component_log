@@ -12,9 +12,9 @@ class BatchWebPlain extends AbstractBatchObserver
         }
     }
 
-	public function log(string $msg, ?string $type = null): void
+    public function log(string $msg, ?string $type = null): void
     {
-        echo BatchLogFile::msg_format($msg, $type)."\n";
+        echo BatchLogFile::msg_format($msg, $type).PHP_EOL;
         $this->flush_apache();
     }
 

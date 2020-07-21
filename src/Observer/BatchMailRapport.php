@@ -21,18 +21,18 @@ class BatchMailRapport extends AbstractBatchObserver
     protected $logfile;
 
     /**
-	 * Définir une fonction d'envoie de mail (conseillé pour les serveurs utilisant du smtp).
-	 *
-	 * @param callable $function Nom de la fonction, ou array(class, method)
-	 * @param array $args Arguments de la fonction DANS l'ordre de la fonction. Array('hook_name' => 'value|null pour autocomplete'), cf keywords dans la fonction
-	 *
-	 * @param string $mail_admin
-	 * @param string $mode
-	 */
+     * Définir une fonction d'envoie de mail (conseillé pour les serveurs utilisant du smtp).
+     *
+     * @param callable $function Nom de la fonction, ou array(class, method)
+     * @param array $args Arguments de la fonction DANS l'ordre de la fonction. Array('hook_name' => 'value|null pour autocomplete'), cf keywords dans la fonction
+     *
+     * @param string $mail_admin
+     * @param string $mode
+     */
     public function __construct(callable $function, iterable $args, string $mail_admin, string $mode = self::MODE_SENDMAIL_ENDSCRIPT)
     {
         if (empty($args)) {
-        	throw new InvalidArgumentException("La fonction de callback mail déclaré '{$function}' n'a pas d'arguments.");
+            throw new InvalidArgumentException("La fonction de callback mail déclaré '{$function}' n'a pas d'arguments.");
         }
 
         // Les mots clés sont les arguments acceptés pour la fonction
@@ -66,12 +66,12 @@ class BatchMailRapport extends AbstractBatchObserver
         $this->mode = $mode;		// Sendmail mode: end script / if error / manual
     }
 
-	public function log(string $msg, ?string $type = null): void
+    public function log(string $msg, ?string $type = null): void
     {
-        fwrite($this->logfile, BatchLogFile::msg_format($msg, $type)."\n");
+        fwrite($this->logfile, BatchLogFile::msg_format($msg, $type).PHP_EOL);
     }
 
-	public function sendmail(): bool
+    public function sendmail(): bool
     {
         if (empty($this->mail_admin)) {
             return false;
@@ -94,7 +94,7 @@ class BatchMailRapport extends AbstractBatchObserver
 
         // Ajouter le contenu du log
         $msg[] = null; // imposer retour à la ligne
-        $msg = implode("\n", array_merge($msg, $log_contents));
+        $msg = implode(PHP_EOL, array_merge($msg, $log_contents));
 
         // Utilisation fonction mail classique
         if (empty($this->callback_mail_function)) {

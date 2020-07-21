@@ -3,9 +3,8 @@
  * @name Batch (avec design pattern observer)
  * @note: Ensemble de class pour la gestion des batchs & log avec gestion des erreurs
  * @author Jgauthi <github.com/jgauthi>, crée le 2octobre2012
- * @version 3.2.2
- * @Requirements:
-    - PHP 7.4+
+ * @version 3.2.4
+ * @Requirements: PHP 7.4+
 
  ******************************************************************************************************/
 
@@ -32,7 +31,7 @@ class Batch
     {
         // Current script name
         $this->name = ((!empty($name)) ? $name : basename($_SERVER['PHP_SELF']));
-        $this->name = preg_replace('#[^a-z0-9._-]#i', '-', $this->name);
+        $this->name = (string) preg_replace('#[^a-z0-9._-]#i', '-', $this->name);
         $this->name = mb_substr($this->name, 0, 40);
 
         set_time_limit(0);
@@ -276,8 +275,6 @@ class Batch
 
     /**
      * Récupération des erreurs PHP dans les logs.
-     *
-     * @return self
      */
     public function varExport(): self
     {
@@ -303,14 +300,13 @@ class Batch
 
             $debug_var[] = $var;
         }
-        $this->log('Debug var: '.implode("\n", $debug_var), 'info');
+        $this->log('Debug var: '.implode(PHP_EOL, $debug_var), 'info');
 
         return $this;
     }
 
     /**
      * Affichage d'une barre de progression.
-     * @return self
      */
     public function progressbar(): self
     {
@@ -327,12 +323,11 @@ class Batch
 
     /**
      * Ré-initialise le compteur de la barre de progression.
-     * @return self
      */
     public function progressbar_reset(): self
     {
         $this->progressbar = 0;
-        echo "\n";
+        echo PHP_EOL;
 
         return $this;
     }

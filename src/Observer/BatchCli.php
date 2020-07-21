@@ -12,15 +12,18 @@ class BatchCli extends AbstractBatchObserver
             \define('STDOUT', fopen('php://stdout', 'w'));
             \define('STDERR', fopen('php://stderr', 'w'));
 
-            register_shutdown_function(function () { fclose(STDOUT); fclose(STDERR); });
+            register_shutdown_function(function () {
+                fclose(STDOUT);
+                fclose(STDERR);
+            });
         }
 
         // Support color theme
         $this->function = ($this->support_terminal_color() ? 'log_terminal_color' : 'log_no_filter');
     }
 
-	// https://cweiske.de/tagebuch/php-auto-coloring-output.htm
-	protected function support_terminal_color(): bool
+    // https://cweiske.de/tagebuch/php-auto-coloring-output.htm
+    protected function support_terminal_color(): bool
     {
         if (\DIRECTORY_SEPARATOR === '\\') {
             return false !== getenv('ANSICON')
@@ -55,13 +58,13 @@ class BatchCli extends AbstractBatchObserver
         return $msg;
     }
 
-	public function log(string $msg, ?string $type = null): void
+    public function log(string $msg, ?string $type = null): void
     {
-        fwrite(STDOUT, \call_user_func([$this, $this->function], $msg, $type)."\n"); // -v 1>>msg.log
+        fwrite(STDOUT, \call_user_func([$this, $this->function], $msg, $type).PHP_EOL); // -v 1>>msg.log
     }
 
     public function error(string $msg): void
     {
-        fwrite(STDERR, \call_user_func([$this, $this->function], $msg, 'error')."\n"); // -v 2>>error.log
+        fwrite(STDERR, \call_user_func([$this, $this->function], $msg, 'error').PHP_EOL); // -v 2>>error.log
     }
 }

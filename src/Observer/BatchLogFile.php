@@ -10,7 +10,7 @@ class BatchLogFile extends AbstractBatchObserver
     protected string $logfile;
     protected string $datetime_delete_oldfile;
 
-	public function __construct(string $folder, string $datetime_delete_oldfile = 'first day of -2 month')
+    public function __construct(string $folder, string $datetime_delete_oldfile = 'first day of -2 month')
     {
         if (empty($folder)) {
             throw new InvalidArgumentException('Folder empty in class: '.__CLASS__);
@@ -21,18 +21,18 @@ class BatchLogFile extends AbstractBatchObserver
         $this->datetime_delete_oldfile = $datetime_delete_oldfile;
     }
 
-	public function set_name(string $name): void
+    public function set_name(string $name): void
     {
         parent::set_name($name);
         $this->logfile = str_replace('\\', '/', "{$this->folder}/{$this->name}_".date('Ymd').'.log');
     }
 
-	public function get_filename(): string
+    public function get_filename(): string
     {
         return $this->logfile;
     }
 
-	public static function msg_format(string $msg, ?string $type = null): string
+    public static function msg_format(string $msg, ?string $type = null): string
     {
         switch ($type) {
             case 'success': break;
@@ -53,7 +53,7 @@ class BatchLogFile extends AbstractBatchObserver
         return $msg;
     }
 
-	public function log(string $msg, ?string $type = null): void
+    public function log(string $msg, ?string $type = null): void
     {
         $msg = self::msg_format($msg, $type);
         error_log(date('Y-m-d H:i:s')."\t{$msg}\n", 3, $this->logfile);

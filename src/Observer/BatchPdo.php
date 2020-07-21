@@ -6,44 +6,33 @@
  * @version 2.2
  * @Requirements:
     - php version 7.4+ avec pdo_mysql, mysql v5.6+
-    - Class batch >= v2
+    - Class batch >= v3
     - PDO
 
  ******************************************************************************************************/
+
 namespace Jgauthi\Component\Log\Observer;
 
+use Exception;
 use Jgauthi\Component\Log\Batch;
 use PDO;
 use PDOException;
 
-/*
-DROP TABLE IF EXISTS `batch_logs`;
-CREATE TABLE `batch_logs` (
-  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-  `script` varchar(40) NOT NULL,
-  `date` datetime NOT NULL,
-  `messages` LONGTEXT NOT NULL,
-  `nb_error` int(4) UNSIGNED NOT NULL DEFAULT '0',
-  `code_ref` varchar(50) DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  KEY `script` (`script`)
-) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COMMENT='Log de la class batch-v2-db' AUTO_INCREMENT=1 ;
-*/
-
 class BatchPdo extends AbstractBatchObserver
 {
-    public const TABLE = 'batch_logs';
-    public const PK = 'id';
-
-    private PDO $pdo;
-    private string $id_session;
+    protected PDO $pdo;
+    protected string $table;
+    protected string $pk;
+    protected string $id_session;
     protected ?string $code_ref = null;
-    protected ?string $datetime_delete_oldfile = null;
+    protected ?string $datetimeDeleteOldfile = null;
 
-    public function __construct(PDO &$pdo, string $datetime_delete_oldfile = 'first day of -2 month')
+    public function __construct(PDO &$pdo, string $datetimeDeleteOldfile = 'first day of -2 month', string $table = 'batch_logs', string $pk = 'id')
     {
         $this->pdo = $pdo;
-        $this->datetime_delete_oldfile = $datetime_delete_oldfile; // Suppression des anciens logs
+        $this->datetimeDeleteOldfile = $datetimeDeleteOldfile; // Suppression des anciens logs
+        $this->table = $table;
+        $this->pk = $pk;
     }
 
     /**
@@ -84,7 +73,7 @@ class BatchPdo extends AbstractBatchObserver
                 'date' => date('Y-m-d H:i:s'),
                 'messages' => "{$message}\n",
             ];
-            $sql = 'INSERT INTO `'.static::TABLE.'` SET `script` = :script, `date` = :date, `messages` = :messages';
+            $sql = "INSERT INTO `{$this->table}` SET `script` = :script, `date` = :date, `messages` = :messages";
 
             $insert = $this->pdo->prepare($sql)->execute($param);
             if ($insert <= 0) {
@@ -114,7 +103,7 @@ class BatchPdo extends AbstractBatchObserver
                 unset($this->nb_error);
             }
 
-            $sql = 'UPDATE `'.static::TABLE."` SET {$param_sql_set} WHERE ".static::PK.' = :id';
+            $sql = "UPDATE `{$this->table}` SET {$param_sql_set} WHERE {$this->pk} = :id";
             $this->pdo->prepare($sql)->execute($param);
         }
     }
@@ -131,17 +120,17 @@ class BatchPdo extends AbstractBatchObserver
         }
 
         // Effacer les logs au-dela d'une certaine date
-        if (empty($this->datetime_delete_oldfile)) {
+        if (empty($this->datetimeDeleteOldfile)) {
             return;
         }
 
-        $time = strtotime($this->datetime_delete_oldfile);
+        $time = strtotime($this->datetimeDeleteOldfile);
         if (empty($time)) {
             return;
         }
 
         // Ajout delete old lines in database
-        $sql = 'DELETE FROM `'.static::TABLE.'` WHERE `date` < :date';
+        $sql = "DELETE FROM `{$this->table}` WHERE `date` < :date";
         $args = ['date' => date('Y-m-d', $time)];
 
         $this->pdo->prepare($sql)->execute($args);
@@ -153,5 +142,58 @@ class BatchPdo extends AbstractBatchObserver
     public function get_id_session(): string
     {
         return $this->id_session;
+    }
+
+    /**
+     * Install the necessary table for this script
+     * @throws PDOException
+     * @throws Exception
+     */
+    public function install(bool $dropTableIfExist = false): bool
+    {
+        $query = [];
+        if ($dropTableIfExist) {
+            $query[] = "DROP TABLE IF EXISTS `{$this->table}`;";
+        }
+
+        $pdoDriver = $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+
+        if ($pdoDriver == 'mysql') {
+            $query[] = "
+                CREATE TABLE IF NOT EXISTS `{$this->table}` (
+                  `{$this->pk}` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+                  `script` varchar(40) NOT NULL,
+                  `date` datetime NOT NULL,
+                  `messages` LONGTEXT NOT NULL,
+                  `nb_error` int(4) UNSIGNED NOT NULL DEFAULT '0',
+                  `code_ref` varchar(50) DEFAULT NULL,
+                  PRIMARY KEY (`{$this->pk}`),
+                  KEY `script` (`script`)
+                ) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COMMENT='Log de la class batch-v2-db' AUTO_INCREMENT=1;
+            ";
+
+        } elseif ($pdoDriver == 'sqlite') {
+            $query[] = "
+                CREATE TABLE IF NOT EXISTS `{$this->table}` (
+                  `{$this->pk}` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+                  `script` varchar(40) NOT NULL,
+                  `date` datetime NOT NULL,
+                  `messages` LONGTEXT NOT NULL,
+                  `nb_error` int(4) UNSIGNED NOT NULL DEFAULT '0',
+                  `code_ref` varchar(50) DEFAULT NULL,
+                  PRIMARY KEY (`{$this->pk}`),
+                  KEY `script` (`script`)
+                );
+            )";
+
+        } else {
+            throw new Exception("$pdoDriver not supported");
+        }
+
+        foreach ($query as $req) {
+            $this->pdo->exec($req);
+        }
+
+        return true;
     }
 }
