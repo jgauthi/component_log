@@ -9,8 +9,9 @@ Class and method for generated log on several canals, with error management.
 
 ## Prerequisite
 
-* PHP 5.5+
-* Pdo Mysql (use the lib [indieQ Pdo Mysql](https://github.com/jgauthi/indieteq-php-my-sql-pdo-database-class))
+* PHP 7.4+
+* PHP Extension: mbstring
+* Pdo Mysql (optional)
 
 ## Install
 Edit your [composer.json](https://getcomposer.org) (launch `composer update` after edit):
@@ -20,7 +21,7 @@ Edit your [composer.json](https://getcomposer.org) (launch `composer update` aft
     { "type": "git", "url": "git@github.com:jgauthi/component_log.git" }
   ],
   "require": {
-    "jgauthi/component_log": "2.*"
+    "jgauthi/component_log": "3.*"
   }
 }
 ```

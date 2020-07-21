@@ -4,15 +4,13 @@
   "type": "library",
   "keywords": [ "log", "cli", "front http", "pdo", "email" ],
   "homepage": "https://github.com/jgauthi/component_log",
-  "repositories": [
-    { "type": "git", "url": "git@github.com:jgauthi/indieteq-php-my-sql-pdo-database-class.git" }
-  ],
   "require": {
-    "php": ">=5.5.0",
-    "jgauthi/indieteq-php-my-sql-pdo-database-class": "1.*"
+    "php": ">=7.4.0",
+    "ext-mbstring": "*",
+    "ext-pdo": "*"
   },
   "autoload": {
-    "classmap": [ "src/" ]
+    "psr-4": { "Jgauthi\\Component\\Log\\": "src/" }
   },
   "license": "GPL-3.0",
   "authors": [

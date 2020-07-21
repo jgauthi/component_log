@@ -1,5 +1,6 @@
 <?php
-use Jgauthi\Component\Database\Db;
+use Jgauthi\Component\Log\Batch;
+use Jgauthi\Component\Log\Observer\BatchPdo;
 
 define('SCRIPT_VERSION', 1.1);
 
@@ -12,19 +13,28 @@ define('DB_LOGIN', 'root');
 define('DB_PASS', '');
 define('DB_DATABASE', 'dbname');
 define('DB_PORT', 3306);
-$pdo = new db(DB_SERVER, DB_LOGIN, DB_PASS, DB_DATABASE, DB_PORT);
+
+$pdo = new PDO('mysql:dbname='.DB_DATABASE.';host='. DB_SERVER .';port='.DB_PORT, DB_LOGIN, DB_PASS, [
+    PDO::ATTR_DEFAULT_FETCH_MODE    => PDO::FETCH_ASSOC,
+    PDO::ATTR_ERRMODE               => PDO::ERRMODE_EXCEPTION,
+    PDO::MYSQL_ATTR_INIT_COMMAND    => 'SET NAMES utf8 COLLATE utf8_unicode_ci',
+]);
+
 
 // Init & configuration batch
 // [Before use] Install the table: src/batch_db.class.php:18
 $batch = new Batch('batch_v2_database');
-$batch->attach( new batch_observer_pdo_db($pdo) );
+$batchPdo = new BatchPdo($pdo);
+$batch->attach($batchPdo);
+$batch->start(SCRIPT_VERSION);
+
+// Variable pour définir le "produit" ou "dossier" en cours, pour l'observer PDO
 $batch->code_ref = 'MYCODE01';
+
 $batch->log('Lancement de la class du batch_observer_pdo_db');
-//echo $var_dont_exists;
-//echo func_not_exists();
+echo $var_dont_exists;
 
 $batch->log('Traitement en cours... (3s)');
 sleep(3);
 
 $batch->end_script();
-?>
